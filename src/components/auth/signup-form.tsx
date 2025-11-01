@@ -74,7 +74,7 @@ export function SignupForm() {
         email: email,
         role: "Field Agent",
         status: "online",
-        description: "A new GeekForce recruit, ready for missions!",
+        description: "A new GeekSquad recruit, ready for missions!",
         profilePicture: `https://picsum.photos/seed/${user.uid}/200/200`,
       }, { merge: true });
 
@@ -87,7 +87,7 @@ export function SignupForm() {
     initiateEmailSignUp(auth, values.email, values.password);
     toast({
       title: "Creating Account...",
-      description: "Please wait while we set up your agent profile.",
+      description: "Please wait while we set up your squad profile.",
     });
   }
 
@@ -103,9 +103,9 @@ export function SignupForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle className="text-2xl">Join the Force</CardTitle>
+        <CardTitle className="text-2xl">Join the squad</CardTitle>
         <CardDescription>
-          Create your agent profile to join the GeekForce.
+          Create your agent profile to join the GeekSquad.
         </CardDescription>
       </CardHeader>
       <Form {...form}>
@@ -118,7 +118,7 @@ export function SignupForm() {
                 <FormItem>
                   <FormLabel>Agent Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="John Doe" {...field} />
+                    <Input placeholder="bernie mantis" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -131,7 +131,7 @@ export function SignupForm() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="agent@geekforce.com" {...field} />
+                    <Input placeholder="geekSquad@gmail.com" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -169,7 +169,7 @@ export function SignupForm() {
               Create Profile
             </Button>
             <div className="text-sm text-muted-foreground">
-              Already an agent?{" "}
+              Already in squad?{" "}
               <Link href={paths.login} className="text-primary hover:underline">
                 Log In
               </Link>
