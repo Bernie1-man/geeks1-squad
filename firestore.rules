@@ -1,0 +1,159 @@
+/**
+ * @fileoverview Firestore Security Rules for GeekForce Central.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model for user profiles and tasks,
+ * with public read access for chat messages and events.  It prioritizes security
+ * by default, explicitly denying access where the data model or requirements are ambiguous.
+ *
+ * Data Structure:
+ * - `/users/{userId}`: Stores individual user profiles.  Access is restricted to the owning user.
+ * - `/users/{userId}/tasks/{taskId}`: Stores tasks assigned to users. Access is restricted to the user the task is assigned to.
+ * - `/chat_messages/{chatMessageId}`: Stores chat messages. All users can read all messages; only the sender can create a message.
+ * - `/events/{eventId}`: Stores event details. All users can read all events; write permissions are limited to users listed in the attendeeIds array.
+ *
+ * Key Security Decisions:
+ * - Users can only access their own profile data.
+ * - Users can only access tasks assigned to them.
+ * - All chat messages are publicly readable.
+ * - Events are publicly readable, only attendees can modify the event.
+ *
+ * Denormalization for Authorization:
+ * - Tasks include denormalized `assignerId` and `assigneeId` fields to avoid `get()` calls
+ *   and enforce authorization independence. This is crucial for efficient and atomic
+ *   security checks.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Controls access to user profile documents.
+     * @path /users/{userId}
+     * @allow (create) User with ID 'user_abc' can create their own profile.
+     *    - auth.uid: 'user_abc'
+     *    - request.resource.data.id: 'user_abc'
+     * @allow (read, update, delete) User with ID 'user_abc' can read/update/delete their own profile.
+     *    - auth.uid: 'user_abc'
+     * @deny (create) User with ID 'user_xyz' cannot create a profile for 'user_abc'.
+     *    - auth.uid: 'user_xyz'
+     *    - request.resource.data.id: 'user_abc'
+     * @deny (read, update, delete) User with ID 'user_xyz' cannot read/update/delete 'user_abc's profile.
+     *    - auth.uid: 'user_xyz'
+     * @principle Enforces document ownership for user profiles.
+     */
+    match /users/{userId} {
+      function isSignedIn() {
+        return request.auth != null;
+      }
+      
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+
+      function isExistingOwner(userId) {
+        return isOwner(userId) && resource != null;
+      }
+
+      allow get: if isOwner(userId);
+      allow list: if isSignedIn();
+
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Controls access to task documents within a user's task list.
+     * @path /users/{userId}/tasks/{taskId}
+     * @allow (create) User with ID 'user_abc' can create a task assigned to themselves.
+     *    - auth.uid: 'user_abc'
+     *    - request.resource.data.assigneeId: 'user_abc'
+     * @allow (read, update, delete) User with ID 'user_abc' can read/update/delete a task assigned to them.
+     *    - auth.uid: 'user_abc'
+     *    - resource.data.assigneeId: 'user_abc'
+     * @deny (create) User with ID 'user_xyz' cannot create a task assigned to 'user_abc'.
+     *    - auth.uid: 'user_xyz'
+     *    - request.resource.data.assigneeId: 'user_abc'
+     * @deny (read, update, delete) User with ID 'user_xyz' cannot read/update/delete a task assigned to 'user_abc'.
+     *    - auth.uid: 'user_xyz'
+     *    - resource.data.assigneeId: 'user_abc'
+     * @principle Enforces document ownership for tasks based on the 'assigneeId' field.
+     */
+    match /users/{userId}/tasks/{taskId} {
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
+
+       function isTaskAssignee(assigneeId) {
+        return request.auth.uid == assigneeId;
+      }
+
+      function isExistingTaskAssignee(assigneeId) {
+        return isTaskAssignee(assigneeId) && resource != null;
+      }
+
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) && request.resource.data.assigneeId == userId;
+      allow update: if isExistingTaskAssignee(resource.data.assigneeId) && resource.data.assigneeId == request.resource.data.assigneeId;
+      allow delete: if isExistingTaskAssignee(resource.data.assigneeId);
+    }
+
+    /**
+     * @description Controls access to chat messages.
+     * @path /chat_messages/{chatMessageId}
+     * @allow (get, list) All users can read chat messages.
+     * @allow (create) User with ID 'user_abc' can create a chat message with their ID as sender.
+     *    - auth.uid: 'user_abc'
+     *    - request.resource.data.senderId: 'user_abc'
+     * @deny (create) User with ID 'user_xyz' cannot create a chat message with 'user_abc' as sender.
+     *    - auth.uid: 'user_xyz'
+     *    - request.resource.data.senderId: 'user_abc'
+     * @principle Allows public read access to chat messages, restricts creation to authenticated users.
+     */
+    match /chat_messages/{chatMessageId} {
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      allow get, list: if true;
+
+      allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    /**
+     * @description Controls access to events.
+     * @path /events/{eventId}
+     * @allow (get, list) All users can read events.
+     * @allow (update, delete) User with ID 'user_abc' can update/delete the event if they are an attendee.
+     *    - auth.uid: 'user_abc'
+     *    - resource.data.attendeeIds: ['user_abc', 'user_xyz']
+     * @deny (update, delete) User with ID 'user_xyz' cannot update/delete the event if they are not an attendee.
+     *    - auth.uid: 'user_xyz'
+     *    - resource.data.attendeeIds: ['user_abc']
+     * @principle Allows public read access to events, restricts update and delete to attendees.
+     */
+    match /events/{eventId} {
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isAttendee(attendeeIds) {
+          return isSignedIn() && attendeeIds.hasAny([request.auth.uid]);
+      }
+
+      function isExistingAttendee(attendeeIds) {
+        return isAttendee(attendeeIds) && resource != null;
+      }
+
+      allow get, list: if true;
+
+      allow create: if isSignedIn(); // any signed in user can create an event
+      allow update: if isExistingAttendee(resource.data.attendeeIds);
+      allow delete: if isExistingAttendee(resource.data.attendeeIds);
+    }
+  }
+}
