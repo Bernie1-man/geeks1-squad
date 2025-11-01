@@ -1,12 +1,11 @@
 'use client';
 import {
-  Auth, // Import Auth type for type hinting
+  Auth,
   signInAnonymously,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  FirebaseError,
-  // Assume getAuth and app are initialized elsewhere
-} from 'firebase/auth';
+} from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 
 type AuthCallback = (error?: FirebaseError) => void;
 
